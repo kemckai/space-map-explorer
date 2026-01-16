@@ -77,6 +77,8 @@ async function performSearch() {
             showNoResults(query);
         } else {
             displayResults(successfulResults);
+            // Try to plot objects on the star map
+            plotObjectsOnStarMap(successfulResults, query);
         }
     } catch (error) {
         hideLoading();
@@ -94,6 +96,13 @@ async function searchSBDB(query) {
         if (!data || data.code !== '200' || !data.object) return null;
 
         const obj = data.object;
+        // Try to extract coordinates from orbit data
+        let coordinates = null;
+        if (obj.orbit && obj.orbit.epoch) {
+            // For small bodies, we can't easily get current RA/Dec without ephemeris calculations
+            // But we can include orbital elements if needed
+        }
+        
         return {
             name: obj.name || query,
             type: obj.object_class || 'Small Body',
@@ -109,6 +118,7 @@ async function searchSBDB(query) {
                 'Orbit Class': obj.orbit_class || 'N/A',
             },
             orbitalData: obj.orbit || null,
+            coordinates: coordinates,
         };
     } catch (error) {
         return null;
@@ -244,6 +254,23 @@ async function searchSIMBAD(query) {
     }
 }
 
+// Known star coordinates for plotting (RA in hours, Dec in degrees)
+const KNOWN_STAR_COORDINATES = {
+    'sirius': { ra: 6.75, dec: -16.7 },
+    'betelgeuse': { ra: 5.92, dec: 7.4 },
+    'vega': { ra: 18.62, dec: 38.8 },
+    'arcturus': { ra: 14.26, dec: 19.2 },
+    'rigel': { ra: 5.24, dec: -8.2 },
+    'procyon': { ra: 7.66, dec: 5.2 },
+    'capella': { ra: 5.28, dec: 45.98 },
+    'altair': { ra: 19.85, dec: 8.87 },
+    'spica': { ra: 13.42, dec: -11.16 },
+    'pollux': { ra: 7.76, dec: 28.0 },
+    'fomalhaut': { ra: 22.96, dec: -29.6 },
+    'deneb': { ra: 20.69, dec: 45.28 },
+    'regulus': { ra: 10.14, dec: 11.97 },
+};
+
 function createFallbackResult(query) {
     // Fallback for objects not found in APIs but commonly searched
     const commonObjects = {
@@ -265,6 +292,23 @@ function createFallbackResult(query) {
             details: commonObjects[lowerQuery].details,
         };
     }
+    
+    // Check if it's a known star
+    if (KNOWN_STAR_COORDINATES[lowerQuery]) {
+        const coords = KNOWN_STAR_COORDINATES[lowerQuery];
+        return {
+            name: query.charAt(0).toUpperCase() + query.slice(1),
+            type: 'Star',
+            source: 'Star Catalog',
+            details: {
+                'Type': 'Star',
+                'Right Ascension': `${coords.ra.toFixed(2)} hours`,
+                'Declination': `${coords.dec.toFixed(2)}°`,
+            },
+            coordinates: coords,
+        };
+    }
+    
     return null;
 }
 
@@ -349,6 +393,95 @@ function hideError() {
 
 function clearResults() {
     document.getElementById('resultsContainer').innerHTML = '';
+}
+
+// Plot objects on the star map if coordinates are available
+async function plotObjectsOnStarMap(results, query) {
+    if (!window.starMap) {
+        // Star map not initialized yet, wait a bit
+        setTimeout(() => plotObjectsOnStarMap(results, query), 500);
+        return;
+    }
+    
+    // Clear previous plotted objects
+    window.starMap.clearPlottedObjects();
+    
+    // Try to find coordinates for each result
+    for (const result of results) {
+        let ra, dec;
+        
+        // Check if result has coordinates
+        if (result.coordinates) {
+            ra = result.coordinates.ra;
+            dec = result.coordinates.dec;
+        } else if (result.details) {
+            // Try to parse RA/Dec from details
+            const raStr = result.details['Right Ascension'] || result.details['RA'];
+            const decStr = result.details['Declination'] || result.details['Dec'];
+            
+            if (raStr && decStr) {
+                ra = parseCoordinate(raStr, true);
+                dec = parseCoordinate(decStr, false);
+            }
+        }
+        
+        // Check known star coordinates
+        if (!ra || !dec) {
+            const lowerName = result.name.toLowerCase();
+            if (KNOWN_STAR_COORDINATES[lowerName]) {
+                ra = KNOWN_STAR_COORDINATES[lowerName].ra;
+                dec = KNOWN_STAR_COORDINATES[lowerName].dec;
+            } else if (KNOWN_STAR_COORDINATES[query.toLowerCase()]) {
+                ra = KNOWN_STAR_COORDINATES[query.toLowerCase()].ra;
+                dec = KNOWN_STAR_COORDINATES[query.toLowerCase()].dec;
+            }
+        }
+        
+        // If we have coordinates, plot on the map
+        if (ra !== undefined && dec !== undefined) {
+            window.starMap.plotObject(result.name, ra, dec, result.type);
+            // Only plot the first object found to avoid clutter
+            break;
+        }
+    }
+}
+
+// Helper function to parse RA/Dec strings
+function parseCoordinate(str, isRA) {
+    if (!str || str === 'N/A') return undefined;
+    
+    // Try to extract number from string like "6.75 hours" or "6h 45m"
+    const numbers = str.match(/[\d.]+/g);
+    if (!numbers || numbers.length === 0) return undefined;
+    
+    let value = parseFloat(numbers[0]);
+    
+    // If it's in hours format (for RA), it's already in hours
+    if (isRA && str.toLowerCase().includes('hour')) {
+        return value;
+    }
+    
+    // If it's in degrees format (for Dec), it's already in degrees
+    if (!isRA && str.includes('°')) {
+        return value;
+    }
+    
+    // Try to parse hms format for RA (e.g., "6h 45m 30s")
+    if (isRA && str.includes('h')) {
+        const parts = str.match(/(\d+)h\s*(\d+)m/);
+        if (parts) {
+            value = parseFloat(parts[1]) + parseFloat(parts[2]) / 60;
+            if (str.includes('s')) {
+                const secMatch = str.match(/(\d+)s/);
+                if (secMatch) {
+                    value += parseFloat(secMatch[1]) / 3600;
+                }
+            }
+            return value;
+        }
+    }
+    
+    return value;
 }
 
 function showNoResults(query) {

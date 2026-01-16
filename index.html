@@ -41,9 +41,30 @@
 
         <div id="errorMessage" class="error hidden"></div>
 
+        <div class="starmap-section">
+            <div class="starmap-header">
+                <h2>🌟 Interactive Star Map</h2>
+                <div class="starmap-controls">
+                    <button id="resetViewBtn" class="control-btn">Reset View</button>
+                    <button id="toggleConstellationsBtn" class="control-btn">Toggle Constellations</button>
+                    <span class="zoom-controls">
+                        <button id="zoomInBtn" class="control-btn">+</button>
+                        <button id="zoomOutBtn" class="control-btn">-</button>
+                    </span>
+                </div>
+            </div>
+            <div class="starmap-container">
+                <canvas id="starMapCanvas"></canvas>
+                <div class="starmap-info">
+                    <p>Drag to pan • Scroll to zoom • Click on objects for details</p>
+                </div>
+            </div>
+        </div>
+
         <div id="resultsContainer" class="results-container"></div>
     </div>
 
+    <script src="starMap.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
